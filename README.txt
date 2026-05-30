@@ -1,5 +1,4 @@
 pip install -r requirements.txt
-pip install spikingjelly
 python Experiment.py --subjects 1 2 3   # quick 3-subject test
 python Experiment.py                     # full 9 subjects
 
