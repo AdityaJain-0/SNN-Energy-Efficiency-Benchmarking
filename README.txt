@@ -1,6 +1,14 @@
 pip install -r requirements.txt
 python Experiment.py --subjects 1 2 3   # quick 3-subject test
 python Experiment.py                     # full 9 subjects
+python Experiment.py --snn_mode both    # both hybrid and full SNN will run 
+
+
+snn_variants = {
+    "hybrid": ["HybridSNN"],
+    "full":   ["FullySNN"],
+    "both":   ["HybridSNN", "FullySNN"],
+}
 
 The full subject will take signifactly longer then the 3 subject. 
 
