@@ -88,7 +88,16 @@ def get_energy(model, model_name, X_sample, device):
         model.eval()
         with torch.no_grad():
             model(X_sample.unsqueeze(0).to(device))
-        return model.get_energy_uJ()
+        sop_energy = model.get_energy_uJ()
+
+        # For HybridSNN, also count the ANN CNN encoder
+        if model_name == "HybridSNN":
+            try:
+                enc_energy, _ = estimate_ann_energy(model.encoder, X_sample.unsqueeze(0), device)
+                return sop_energy + enc_energy
+            except Exception as e:
+                print(f"  [Energy] Encoder MAC count failed: {e}")
+        return sop_energy
     else:
         try:
             energy, _ = estimate_ann_energy(model, X_sample, device)
@@ -96,7 +105,6 @@ def get_energy(model, model_name, X_sample, device):
         except Exception as e:
             print(f"  [Energy] Could not estimate for {model_name}: {e}")
             return float("nan")
-
 
 # ---------------------------------------------------------------------------
 # Plotting
