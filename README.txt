@@ -7,11 +7,13 @@ The central goal is to demonstrate the viability of SNNs for this task — showi
 ## Models
 
 **ANN baselines** (for accuracy and energy comparison):
+
 - **ATCNet** — Attention Temporal Convolutional Network
 - **EEGNet** — compact convolutional network for EEG-based BCIs
 - **ShallowConvNet** — shallow CNN baseline for EEG decoding
 
 **SNN models** (the focus of this project):
+
 - **HybridSNN** — CNN front-end + spiking fully-connected layers
 - **FullySNN** — fully spiking network (every layer, including convolutions, is spike-driven), giving the cleanest end-to-end energy comparison since no layer relies on dense ANN-style computation
 
