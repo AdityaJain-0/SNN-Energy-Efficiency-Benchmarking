@@ -305,13 +305,17 @@ def main(args):
     print(f"Device: {device}")
 
     # Build model list
-    base_models  = ["ATCNet", "EEGNet", "ShallowConvNet"]
-    snn_variants = {
-        "hybrid": ["HybridSNN"],
-        "full":   ["FullySNN"],
-        "both":   ["HybridSNN", "FullySNN"],
-    }
-    model_names = base_models + snn_variants.get(args.snn_mode, ["HybridSNN"])
+    if args.models_only:
+        model_names = args.models_only
+    else:
+        base_models  = ["ATCNet", "EEGNet", "ShallowConvNet"]
+        snn_variants = {
+            "hybrid": ["HybridSNN"],
+            "full":   ["FullySNN"],
+            "both":   ["HybridSNN", "FullySNN"],
+        }
+        model_names = base_models + snn_variants.get(args.snn_mode, ["HybridSNN"])
+
     print(f"Models: {model_names}")
     print(f"CV mode: {args.cv_mode}")
 
@@ -334,6 +338,12 @@ def main(args):
     # Save results
     df = pd.DataFrame(records)
     csv_path = os.path.join(RESULTS_DIR, f"summary_{args.cv_mode}.csv")
+
+    if os.path.exists(csv_path):
+        old_df = pd.read_csv(csv_path)
+        old_df = old_df[~old_df["model"].isin(df["model"].unique())]
+        df = pd.concat([old_df, df], ignore_index=True)
+
     df.to_csv(csv_path, index=False)
     print(f"\nResults saved → {csv_path}")
 
@@ -361,6 +371,9 @@ if __name__ == "__main__":
 
     p.add_argument("--subjects",  nargs="+", type=int, default=None,
                    help="Subject IDs 1-9 (default: all)")
+    p.add_argument("--models_only", nargs="+", default=None,
+               help="Run ONLY these model names, bypassing base_models + snn_mode "
+                    "(e.g. --models_only FullySNN)")
     p.add_argument("--cv_mode",   default="within_subject",
                    choices=["within_subject", "loso", "legacy_pooled"],
                    help="Cross-validation strategy (default: within_subject)")

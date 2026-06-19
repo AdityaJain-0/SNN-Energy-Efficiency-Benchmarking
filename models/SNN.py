@@ -92,6 +92,32 @@ def _register_sop_hook(module, sop_store: list):
     module.register_forward_hook(hook)
 
 
+class SpikeEncoder(nn.Module):
+    """Converts the static analog EEG frame into a time-varying spike
+    train. Constant current -> PLIF membrane dynamics produce different
+    spikes at different t, even though the analog input never changes."""
+    def __init__(self, n_channels, n_times, F0=4, mode='direct', tau_init=2.0):
+        super().__init__()
+        self.mode = mode
+        if mode == 'direct':
+            self.proj = nn.Conv2d(1, F0, (1, 1), bias=True)
+            self.bn = nn.BatchNorm2d(F0)
+            self.lif = _plif(tau_init)
+        elif mode == 'poisson':
+            pass
+        else:
+            raise ValueError(mode)
+
+    def forward(self, frame):
+        if self.mode == 'direct':
+            cur = self.bn(self.proj(frame))
+            return self.lif(cur)
+        else:
+            p = torch.sigmoid(frame)
+            return torch.bernoulli(p)
+
+
+
 # ---------------------------------------------------------------------------
 # Non-spiking EEG encoder (used by HybridSNN only)
 # ---------------------------------------------------------------------------
@@ -216,8 +242,8 @@ class FullySNN(nn.Module):
     """
 
     def __init__(self, n_channels=22, n_times=512, n_classes=3,
-                 hidden_dim=128, T_sim=16, dropout=0.5, tau_init=2.0,
-                 F1=8, D=2, kernel_t=64):
+             hidden_dim=128, T_sim=16, dropout=0.5, tau_init=2.0,
+             F1=8, D=2, kernel_t=64, encoding='direct'):
         super().__init__()
         if not SPIKINGJELLY_AVAILABLE:
             raise ImportError("Install SpikingJelly: pip install spikingjelly")
@@ -225,29 +251,31 @@ class FullySNN(nn.Module):
         self.T_sim = T_sim
         self._sop = [0]
         F2 = F1 * D
+        F0 = 4
 
-        # --- Spiking conv front-end ---
-        # Temporal conv: across time dimension
-        self.conv_temp = nn.Conv2d(1, F1, (1, kernel_t),
-                                   padding=(0, kernel_t // 2), bias=False)
+        # NEW: spike encoder replaces "feed same analog frame T_sim times"
+        self.encoder_spike = SpikeEncoder(n_channels, n_times, F0=F0,
+                                        mode=encoding, tau_init=tau_init)
+
+        # conv_temp now consumes spikes (F0 channels), not raw analog (1 channel)
+        self.conv_temp = nn.Conv2d(F0, F1, (1, kernel_t),
+                                padding=(0, kernel_t // 2), bias=False)
         self.bn_temp   = nn.BatchNorm2d(F1)
         self.lif_temp  = _plif(tau_init)
 
-        # Spatial depthwise conv: fuse channels
         self.conv_spat = nn.Conv2d(F1, F2, (n_channels, 1), groups=F1, bias=False)
         self.bn_spat   = nn.BatchNorm2d(F2)
         self.lif_spat  = _plif(tau_init)
 
         self.pool = nn.AvgPool2d((1, 8))
 
-        # Compute flattened size after conv+pool (no spiking needed for sizing)
+        # sizing dummy must route through F0 channels now
         with torch.no_grad():
-            dummy = torch.zeros(1, 1, n_channels, n_times)
+            dummy_spk = torch.zeros(1, F0, n_channels, n_times)
             dummy = self.pool(self.bn_spat(self.conv_spat(
-                              self.bn_temp(self.conv_temp(dummy)))))
+                            self.bn_temp(self.conv_temp(dummy_spk)))))
             flat_dim = dummy.numel()
 
-        # --- Spiking FC layers ---
         self.fc1     = nn.Linear(flat_dim,   hidden_dim, bias=False)
         self.lif_fc1 = _plif(tau_init)
         self.fc2     = nn.Linear(hidden_dim, hidden_dim, bias=False)
@@ -257,8 +285,10 @@ class FullySNN(nn.Module):
 
         self.drop = nn.Dropout(dropout)
 
-        # SOP hooks on ALL weight layers (conv + fc)
-        for m in [self.conv_temp, self.conv_spat, self.fc1, self.fc2, self.fc3]:
+        sop_layers = [self.conv_temp, self.conv_spat, self.fc1, self.fc2, self.fc3]
+        if encoding == 'direct':
+            sop_layers.append(self.encoder_spike.proj)
+        for m in sop_layers:
             _register_sop_hook(m, self._sop)
 
         self._init_weights()
@@ -275,33 +305,24 @@ class FullySNN(nn.Module):
         return self._sop[0] * pJ_per_SOP / 1e6
 
     def forward(self, x):
-        """
-        x : (B, C, T)
-        Each of the T_sim timesteps receives the same input frame
-        (static encoding). The temporal conv kernel captures time
-        structure within each frame.
-        """
-        functional.reset_net(self)
+        functional.reset_net(self)   # resets encoder_spike's PLIF too
         self.reset_sop()
 
-        B = x.shape[0]
-        frame = x.unsqueeze(1)  # (B, 1, C, T)
+        frame = x.unsqueeze(1)  # (B, 1, C, T) -- analog, constant across t BY DESIGN
 
         out_spikes = []
         for _ in range(self.T_sim):
-            # Conv front-end — spiking activations
-            h = self.lif_temp(self.bn_temp(self.conv_temp(frame)))   # (B,F1,C,T)
-            h = self.lif_spat(self.bn_spat(self.conv_spat(h)))       # (B,F2,1,T)
-            h = self.pool(h).flatten(1)                               # (B, flat)
+            spk_in = self.encoder_spike(frame)                       # varies per t
+            h = self.lif_temp(self.bn_temp(self.conv_temp(spk_in)))
+            h = self.lif_spat(self.bn_spat(self.conv_spat(h)))
+            h = self.pool(h).flatten(1)
             h = self.drop(h)
-
-            # Spiking FC
             h = self.lif_fc1(self.fc1(h))
             h = self.lif_fc2(self.fc2(h))
-            s = self.lif_out(self.fc3(h))    # (B, n_classes) — 0/1 spikes
+            s = self.lif_out(self.fc3(h))
             out_spikes.append(s)
 
-        return torch.stack(out_spikes).mean(0)  # (B, n_classes)
+        return torch.stack(out_spikes).mean(0)
 
 
 # ---------------------------------------------------------------------------
