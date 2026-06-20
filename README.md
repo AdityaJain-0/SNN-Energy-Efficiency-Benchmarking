@@ -17,6 +17,10 @@ The central goal is to demonstrate the viability of SNNs for this task — showi
 - **HybridSNN** — CNN front-end + spiking fully-connected layers
 - **FullySNN** — fully spiking network (every layer, including convolutions, is spike-driven), giving the cleanest end-to-end energy comparison since no layer relies on dense ANN-style computation
 
+
+<img width="908" height="754" alt="ExperimentExplanation" src="https://github.com/user-attachments/assets/1ca0b5b7-38d4-418b-b178-c8c1213ebb1b" />
+
+
 ## Installation
 
 ```bash
