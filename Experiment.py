@@ -93,7 +93,7 @@ def get_energy(model, model_name, X_sample, device):
         # For HybridSNN, also count the ANN CNN encoder
         if model_name == "HybridSNN":
             try:
-                enc_energy, _ = estimate_ann_energy(model.encoder, X_sample.unsqueeze(0), device)
+                enc_energy, _ = estimate_ann_energy(model.encoder, X_sample, device)
                 return sop_energy + enc_energy
             except Exception as e:
                 print(f"  [Energy] Encoder MAC count failed: {e}")
