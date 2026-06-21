@@ -4,6 +4,20 @@ This project benchmarks deep learning and spiking neural network (SNN) architect
 
 The central goal is to demonstrate the viability of SNNs for this task — showing that they can reach decoding accuracy competitive with established ANN baselines (ATCNet, EEGNet, ShallowConvNet) while consuming far less estimated inference energy. To that end, every model reports accuracy, F1 score, and estimated per-inference energy side by side, so accuracy/energy trade-offs are directly comparable rather than evaluated in isolation.
 
+## Results — Within-Subject CV (9 subjects, 5 repeats × 5 folds, 3-class motor imagery)
+
+| Model          | Accuracy (mean ± SD) | F1 (macro) | Energy (µJ/inference, mean ± SD) | Params  |
+|----------------|:---------------------:|:----------:|:----------------------------------:|:-------:|
+| ATCNet         | 0.779 ± 0.153         | 0.774      | 62.41 ± 0.00                       | 29,155  |
+| ShallowConvNet | 0.776 ± 0.157         | 0.773      | 128.68 ± 0.00                      | 39,643  |
+| EEGNet         | 0.676 ± 0.187         | 0.669      | 27.77 ± 0.00                       | 2,227   |
+| HybridSNN      | 0.603 ± 0.216         | 0.526      | 27.76 ± 0.04                       | 50,995  |
+| FullySNN       | 0.525 ± 0.089         | 0.518      | **0.163 ± 0.034**                  | 51,497  |
+
+**Key finding:** FullySNN trades accuracy for a substantial energy reduction — roughly **170× lower energy** than HybridSNN and ANN baselines, while using a fully spike-driven pipeline end-to-end. HybridSNN's energy profile closely matches EEGNet's (similar dense CNN front-end), but it does not outperform EEGNet on accuracy, making it a less favorable middle ground compared to either pure-ANN or fully-spiking approaches.
+
+*Energy estimated via synaptic operation (SOP) counting for spiking layers (0.9 pJ/SOP, Loihi-style approximation) and MAC counting for ANN layers (4.6 pJ/MAC, 45nm CMOS approximation). ANN energy has zero variance since it is a deterministic function of architecture and input shape; SNN energy varies with input-dependent spike activity.*
+
 ## Models
 
 **ANN baselines** (for accuracy and energy comparison):
